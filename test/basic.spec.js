@@ -84,6 +84,28 @@ describe('basic tests', function () {
     })
   })
 
+  it('middleware ending request before all middlewares applied', function (done) {
+    const engine = new RpcEngine()
+
+    engine.push(function (_req, res, _next, end) {
+      res.result = 42
+      end()
+    })
+
+    engine.push(function (_req, _res, _next, _end) {
+      assert.fail('should not have called second middleware')
+    })
+
+    const payload = { id: 1, jsonrpc: '2.0', method: 'hello' }
+
+    engine.handle(payload, function (err, res) {
+      assert.ifError(err, 'did not error')
+      assert.ok(res, 'has res')
+      assert.equal(res.result, 42, 'has expected result')
+      done()
+    })
+  })
+
   it('erroring middleware test: end(error)', function (done) {
     const engine = new RpcEngine()
 
@@ -308,5 +330,43 @@ describe('basic tests', function () {
       assert.equal(err.message, 'foo', 'error has expected message')
       done()
     })
+  })
+
+  it('handles failure to end request', function (done) {
+    const engine = new RpcEngine()
+
+    engine.push(function (_req, res, next, _end) {
+      res.result = 42
+      next()
+    })
+
+    const payload = { id: 1, jsonrpc: '2.0', method: 'hello' }
+
+    engine.handle(payload, (err, res) => {
+      assert.ok(err, 'should have errored')
+      assert.ok(
+        err.message.startsWith('JsonRpcEngine: Nothing ended request:'),
+        'should have expected error message',
+      )
+      assert.ok(!res.result, 'should not have result')
+      done()
+    })
+  })
+
+  it('handles batch request processing error', function (done) {
+    const origPromiseAll = Promise.all
+    Promise.all = () => {
+      throw new Error('foo')
+    }
+
+    const engine = new RpcEngine()
+
+    engine._handleBatch([{}], (err) => {
+      assert.ok(err, 'did error')
+      assert.equal(err.message, 'foo', 'error has expected message')
+      done()
+    })
+
+    Promise.all = origPromiseAll
   })
 })
