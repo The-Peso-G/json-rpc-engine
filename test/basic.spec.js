@@ -286,4 +286,27 @@ describe('basic tests', function () {
       done()
     })
   })
+
+  it('handles error in next handler', function (done) {
+    const engine = new RpcEngine()
+
+    engine.push(function (_req, _res, next, _end) {
+      next(function (_cb) {
+        throw new Error('foo')
+      })
+    })
+
+    engine.push(function (_req, res, _next, end) {
+      res.result = 42
+      end()
+    })
+
+    const payload = { id: 1, jsonrpc: '2.0', method: 'hello' }
+
+    engine.handle(payload, (err, _res) => {
+      assert.ok(err, 'did error')
+      assert.equal(err.message, 'foo', 'error has expected message')
+      done()
+    })
+  })
 })
