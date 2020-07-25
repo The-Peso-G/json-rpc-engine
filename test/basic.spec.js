@@ -43,6 +43,21 @@ describe('basic tests', function () {
     })
   })
 
+  it('basic middleware test (async)', async function () {
+    const engine = new RpcEngine()
+
+    engine.push(function (_req, res, _next, end) {
+      res.result = 42
+      end()
+    })
+
+    const payload = { id: 1, jsonrpc: '2.0', method: 'hello' }
+
+    const res = await engine.handle(payload)
+    assert.ok(res, 'has res')
+    assert.equal(res.result, 42, 'has expected result')
+  })
+
   it('allow null result', function (done) {
     const engine = new RpcEngine()
 
@@ -207,6 +222,37 @@ describe('basic tests', function () {
     })
   })
 
+  it('handle batch payloads (async signature)', async function () {
+    const engine = new RpcEngine()
+
+    engine.push(function (req, res, _next, end) {
+      if (req.id === 4) {
+        delete res.result
+        res.error = new Error('foobar')
+        return end(res.error)
+      }
+      res.result = req.id
+      return end()
+    })
+
+    const payloadA = { id: 1, jsonrpc: '2.0', method: 'hello' }
+    const payloadB = { id: 2, jsonrpc: '2.0', method: 'hello' }
+    const payloadC = { id: 3, jsonrpc: '2.0', method: 'hello' }
+    const payloadD = { id: 4, jsonrpc: '2.0', method: 'hello' }
+    const payloadE = { id: 5, jsonrpc: '2.0', method: 'hello' }
+    const payload = [payloadA, payloadB, payloadC, payloadD, payloadE]
+
+    const res = await engine.handle(payload)
+    assert.ok(res, 'has res')
+    assert.ok(Array.isArray(res), 'res is array')
+    assert.equal(res[0].result, 1, 'has expected result')
+    assert.equal(res[1].result, 2, 'has expected result')
+    assert.equal(res[2].result, 3, 'has expected result')
+    assert.ok(!res[3].result, 'has no result')
+    assert.equal(res[3].error.code, -32603, 'has expected error')
+    assert.equal(res[4].result, 5, 'has expected result')
+  })
+
   it('basic notifications', function (done) {
     const engine = new RpcEngine()
 
@@ -356,6 +402,7 @@ describe('basic tests', function () {
   it('handles batch request processing error', function (done) {
     const origPromiseAll = Promise.all
     Promise.all = () => {
+      Promise.all = origPromiseAll
       throw new Error('foo')
     }
 
@@ -366,7 +413,23 @@ describe('basic tests', function () {
       assert.equal(err.message, 'foo', 'error has expected message')
       done()
     })
+  })
 
-    Promise.all = origPromiseAll
+  it('handles batch request processing error (async)', async function () {
+    const origPromiseAll = Promise.all
+    Promise.all = () => {
+      Promise.all = origPromiseAll
+      throw new Error('foo')
+    }
+
+    const engine = new RpcEngine()
+
+    try {
+      await engine._handleBatch([{}])
+      assert.fail('should have errored')
+    } catch (err) {
+      assert.ok(err, 'did error')
+      assert.equal(err.message, 'foo', 'error has expected message')
+    }
   })
 })
